@@ -1,0 +1,15 @@
+Flask
+flask-cors
+pandas
+numpy
+matplotlib
+Pillow
+openpyxl
+plotly
+python-pptx
+python-docx
+tk
+asyncio
+websockets
+shutil
+multiprocessing
