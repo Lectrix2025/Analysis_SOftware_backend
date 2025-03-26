@@ -10,4 +10,4 @@ python-pptx
 python-docx
 asyncio
 websockets
-
+mplcursors
