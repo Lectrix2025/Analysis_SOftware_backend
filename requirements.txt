@@ -8,7 +8,6 @@ openpyxl
 plotly
 python-pptx
 python-docx
-tk
 asyncio
 websockets
-multiprocessing
+
