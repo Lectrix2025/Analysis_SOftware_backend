@@ -17,6 +17,9 @@ import Influx_NDuro_NoGPS
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend communication
 
+UPLOAD_FOLDER = os.path.abspath("uploaded_folders")  # Ensures folder is stored locally
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Creates the folder if not exists
+
 def run_script(script_func, path):
     """Runs the given script function with the provided path."""
     try:
@@ -25,8 +28,31 @@ def run_script(script_func, path):
     except Exception as e:
         print(f"❌ Error in {script_func.__name__}: {e}")
 
+@app.route('/upload-folder', methods=['POST'])
+def upload_folder():
+    """Handles folder uploads from the frontend."""
+    if 'folder' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No folder part in the request.'}), 400
+
+    folder = request.files.getlist('folder')
+    folder_name = request.form.get('folderName')
+
+    if not folder_name:
+        return jsonify({'status': 'error', 'message': 'Missing folder name.'}), 400
+
+    folder_path = os.path.join(UPLOAD_FOLDER, folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+
+    for file in folder:
+        file_path = os.path.join(folder_path, file.filename)
+        file.save(file_path)
+
+    print(f"✅ Folder '{folder_name}' uploaded successfully.")
+    return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" uploaded!', 'folderPath': folder_path}), 200
+
 @app.route('/run-analysis', methods=['POST'])
 def run_analysis():
+    """Handles API requests to execute specific analysis scripts."""
     try:
         data = request.json
         folder_path = data.get('folderPath')
@@ -37,28 +63,21 @@ def run_analysis():
         if not folder_path or not script_name:
             return jsonify({'status': 'error', 'message': 'Missing required fields: folderPath or scriptName.'}), 400
 
-        # Debug print
-        print(f"📂 Received folder path: {folder_path}")
-
-        # Ensure folder exists
-        if not os.path.exists(folder_path):
-            return jsonify({'status': 'error', 'message': f"Folder does not exist: {folder_path}"}), 400
-
         print(f"📢 Running {script_name} on folder: {folder_path}")
 
-        # Handle optional folder copying
+        # Optional folder copying logic
         if copy_folder_option and destination_folder:
-            destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
             try:
+                destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
                 shutil.copytree(folder_path, destination_folder_path)
                 new_path = destination_folder_path
-                print(f"✅ Folder copied to {destination_folder_path}")
+                print(f"✅ Folder copied to {destination_folder_path}.")
             except Exception as e:
                 return jsonify({'status': 'error', 'message': f'Error copying folder: {e}'}), 500
         else:
             new_path = folder_path
 
-        # Validate script name
+        # Mapping script names to corresponding functions
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -69,11 +88,11 @@ def run_analysis():
         if script_name not in script_functions:
             return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
 
-        # Run script in a separate process
+        # Running script in a separate process
         process = Process(target=run_script, args=(script_functions[script_name], new_path))
         process.start()
 
-        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!'}), 200
+        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!', 'acknowledgement': 'Processing...'}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Server error: {e}'}), 500
@@ -131,4 +150,3 @@ if __name__ == '__main__':
         flask_process.terminate()
         websocket_process.terminate()
         flask_process.join()
-
