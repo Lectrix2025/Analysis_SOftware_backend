@@ -23,8 +23,8 @@ def Influx_NDuro_NoGPS_input(input_folder_path):
     import plotly.graph_objs as go
     from plotly.subplots import make_subplots
     from datetime import datetime, timedelta
-    import tkinter as tk
-    from tkinter import messagebox
+    # import tkinter as tk
+    # from tkinter import messagebox
 
     # # Display a message box indicating that the analysis is ready
     # root = tk.Tk()
@@ -1571,10 +1571,10 @@ def Influx_NDuro_NoGPS_input(input_folder_path):
             merged_workbook.save(filename=merged_file_path)
             print("<----------------Analysis file is ready---------------->")
             # Display a message box indicating that the analysis is ready
-            root = tk.Tk()
-            root.withdraw()  # Hide the main window
+            # root = tk.Tk()
+            # root.withdraw()  # Hide the main window
             # messagebox.showinfo("Analysis Complete", "The analysis is ready and saved as Analysis.xlsx")
-            root.destroy()
+            # root.destroy()
     
         merge_data_and_save_to_excel(main_folder_path)
     

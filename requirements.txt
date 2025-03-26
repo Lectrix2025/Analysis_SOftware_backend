@@ -11,3 +11,4 @@ python-docx
 asyncio
 websockets
 mplcursors
+
