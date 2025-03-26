@@ -56,26 +56,18 @@ def upload_folder():
 
 @app.route('/run-analysis', methods=['POST'])
 def run_analysis():
-    """Executes a selected script on the uploaded folder."""
+    """Handles API requests to execute specific analysis scripts."""
     try:
-        folder_path = request.form.get('folderPath')
-        destination_folder = request.form.get('destinationFolder')
-        script_name = request.form.get('scriptName')
-        copy_folder_option = request.form.get('copyFolder', 'false').lower() == 'true'
+        data = request.json
+        print(f"📩 Received request data: {data}")  # ✅ Debugging Print
+
+        folder_path = data.get('folderPath')
+        script_name = data.get('scriptName')
 
         if not folder_path or not script_name:
             return jsonify({'status': 'error', 'message': 'Missing required fields: folderPath or scriptName.'}), 400
 
         print(f"📢 Running {script_name} on folder: {folder_path}")
-
-        # Optional folder copying logic
-        if copy_folder_option and destination_folder:
-            destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
-            if os.path.exists(destination_folder_path):
-                shutil.rmtree(destination_folder_path)  # Remove existing folder before copying
-            shutil.copytree(folder_path, destination_folder_path)
-            folder_path = destination_folder_path
-            print(f"✅ Folder copied to {destination_folder_path}.")
 
         # Mapping script names to functions
         script_functions = {
@@ -88,7 +80,7 @@ def run_analysis():
         if script_name not in script_functions:
             return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
 
-        # Run the selected script in a separate process
+        # Run script in a separate process
         process = Process(target=run_script, args=(script_functions[script_name], folder_path))
         process.start()
 
@@ -96,6 +88,7 @@ def run_analysis():
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Server error: {e}'}), 500
+
 
 # --------------------- WebSocket Setup ---------------------
 connected_clients = set()
