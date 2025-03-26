@@ -27,39 +27,38 @@ def run_script(script_func, path):
 
 @app.route('/run-analysis', methods=['POST'])
 def run_analysis():
-    """Handles API requests to execute specific analysis scripts."""
     try:
         data = request.json
-
         folder_path = data.get('folderPath')
         destination_folder = data.get('destinationFolder')
         script_name = data.get('scriptName')
         copy_folder_option = data.get('copyFolder', False)
 
         if not folder_path or not script_name:
-            return jsonify({
-                'status': 'error',
-                'message': 'Missing required fields: folderPath or scriptName.'
-            }), 400
+            return jsonify({'status': 'error', 'message': 'Missing required fields: folderPath or scriptName.'}), 400
+
+        # Debug print
+        print(f"📂 Received folder path: {folder_path}")
+
+        # Ensure folder exists
+        if not os.path.exists(folder_path):
+            return jsonify({'status': 'error', 'message': f"Folder does not exist: {folder_path}"}), 400
 
         print(f"📢 Running {script_name} on folder: {folder_path}")
 
-        # Optional folder copying logic
+        # Handle optional folder copying
         if copy_folder_option and destination_folder:
+            destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
             try:
-                destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
                 shutil.copytree(folder_path, destination_folder_path)
                 new_path = destination_folder_path
-                print(f"✅ Folder copied to {destination_folder_path}.")
+                print(f"✅ Folder copied to {destination_folder_path}")
             except Exception as e:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'Error copying folder: {e}'
-                }), 500
+                return jsonify({'status': 'error', 'message': f'Error copying folder: {e}'}), 500
         else:
             new_path = folder_path
 
-        # Mapping script names to corresponding functions
+        # Validate script name
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -68,26 +67,16 @@ def run_analysis():
         }
 
         if script_name not in script_functions:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid script name.'
-            }), 400
+            return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
 
-        # Running script in a separate process
+        # Run script in a separate process
         process = Process(target=run_script, args=(script_functions[script_name], new_path))
         process.start()
 
-        return jsonify({
-            'status': 'success',
-            'message': f'{script_name} analysis started successfully!',
-            'acknowledgement': 'Processing...'
-        }), 200
+        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!'}), 200
 
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Server error: {e}'
-        }), 500
+        return jsonify({'status': 'error', 'message': f'Server error: {e}'}), 500
 
 # --------------------- WebSocket Setup ---------------------
 
