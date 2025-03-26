@@ -11,5 +11,4 @@ python-docx
 tk
 asyncio
 websockets
-shutil
 multiprocessing
