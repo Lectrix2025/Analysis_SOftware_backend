@@ -58,18 +58,25 @@ def upload_folder():
 def run_analysis():
     """Handles API requests to execute specific analysis scripts."""
     try:
-        data = request.json
-        print(f"📩 Received request data: {data}")  # ✅ Debugging Print
+        # Ensure a file and script name are provided
+        if 'file' not in request.files or 'scriptName' not in request.form:
+            return jsonify({'status': 'error', 'message': 'Missing zip file or scriptName'}), 400
 
-        folder_path = data.get('folderPath')
-        script_name = data.get('scriptName')
+        uploaded_file = request.files['file']
+        script_name = request.form['scriptName']
 
-        if not folder_path or not script_name:
-            return jsonify({'status': 'error', 'message': 'Missing required fields: folderPath or scriptName.'}), 400
+        # Save the zip file
+        zip_path = os.path.join(UPLOAD_FOLDER, uploaded_file.filename)
+        uploaded_file.save(zip_path)
+        print(f"✅ Zip file saved at {zip_path}")
 
-        print(f"📢 Running {script_name} on folder: {folder_path}")
+        # Extract the zip file
+        extract_folder = os.path.join(UPLOAD_FOLDER, uploaded_file.filename.replace(".zip", ""))
+        os.makedirs(extract_folder, exist_ok=True)
+        shutil.unpack_archive(zip_path, extract_folder)
+        print(f"📂 Folder extracted to {extract_folder}")
 
-        # Mapping script names to functions
+        # Run the selected script
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -81,13 +88,14 @@ def run_analysis():
             return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
 
         # Run script in a separate process
-        process = Process(target=run_script, args=(script_functions[script_name], folder_path))
+        process = Process(target=script_functions[script_name], args=(extract_folder,))
         process.start()
 
-        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!', 'acknowledgement': 'Processing...'}), 200
+        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!'}), 200
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Server error: {e}'}), 500
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
+
 
 
 # --------------------- WebSocket Setup ---------------------
