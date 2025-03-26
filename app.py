@@ -124,7 +124,7 @@ def start_websocket():
     asyncio.run(start_websocket_server())
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
+    multiprocessing.set_start_method('spawn', force=True)
 
     # Creating separate processes for Flask and WebSocket
     flask_process = Process(target=start_flask)
@@ -142,3 +142,4 @@ if __name__ == '__main__':
         flask_process.terminate()
         websocket_process.terminate()
         flask_process.join()
+
