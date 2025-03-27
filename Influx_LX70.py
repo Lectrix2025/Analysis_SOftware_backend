@@ -1,5 +1,7 @@
 def Influx_LX70_input(input_folder_path, *args, **kwargs):
     """Process the input data and generate the output for Influx LX70."""
+    print("Influx LX70 input function called with the following arguments:")
+    import os
     import sys
     from matplotlib.mlab import window_none
     import pandas as pd
@@ -131,9 +133,7 @@ def Influx_LX70_input(input_folder_path, *args, **kwargs):
     # data = pd.read_csv('your_data.csv')
     # Path = 'path/to/save'
     # plot_ghps(data, Path)
-
-    
-    
+   
     # def analysis_Energy(log_file, km_file):
     def analysis_Energy(data,subfolder_path):
         dayfirst=True
