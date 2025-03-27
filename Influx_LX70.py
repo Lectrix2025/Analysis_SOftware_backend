@@ -1,4 +1,4 @@
-def Influx_LX70_input(input_folder_path, *args, **kwargs):
+def Influx_LX70_input(input_folder_path):
     """Process the input data and generate the output for Influx LX70."""
     print("Influx LX70 input function called with the following arguments:")
     import os

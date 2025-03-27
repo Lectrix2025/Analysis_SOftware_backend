@@ -1,10 +1,9 @@
-import multiprocessing
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import shutil
-import zipfile
 from multiprocessing import Process
+import multiprocessing
 import asyncio
 import websockets
 
@@ -18,54 +17,49 @@ import Influx_NDuro_NoGPS
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend communication
 
-UPLOAD_FOLDER = os.path.abspath("uploaded_folders")
-PROCESSED_FOLDER = os.path.abspath("processed_folders")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(PROCESSED_FOLDER, exist_ok=True)
-
-def run_script(script_func, input_folder, output_folder):
+def run_script(script_func, path):
     """Runs the given script function with the provided path."""
     try:
-        os.makedirs(output_folder, exist_ok=True)
-        script_func(input_folder, output_folder)
+        script_func(path)
         print(f"✅ {script_func.__name__} completed successfully.")
     except Exception as e:
         print(f"❌ Error in {script_func.__name__}: {e}")
-
-def compress_folder(folder_path, output_zip_path):
-    """Compresses a folder into a ZIP file."""
-    try:
-        shutil.make_archive(output_zip_path.replace('.zip', ''), 'zip', folder_path)
-        print(f"✅ Folder compressed successfully: {output_zip_path}")
-        return output_zip_path
-    except Exception as e:
-        print(f"❌ Failed to compress folder: {e}")
-        return None
 
 @app.route('/run-analysis', methods=['POST'])
 def run_analysis():
     """Handles API requests to execute specific analysis scripts."""
     try:
-        if 'file' not in request.files or 'scriptName' not in request.form:
-            return jsonify({'status': 'error', 'message': 'Missing zip file or scriptName'}), 400
+        data = request.json
 
-        uploaded_file = request.files['file']
-        script_name = request.form['scriptName']
+        folder_path = data.get('folderPath')
+        destination_folder = data.get('destinationFolder')
+        script_name = data.get('scriptName')
+        copy_folder_option = data.get('copyFolder', False)
 
-        # Save ZIP file
-        zip_path = os.path.join(UPLOAD_FOLDER, uploaded_file.filename)
-        uploaded_file.save(zip_path)
+        if not folder_path or not script_name:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required fields: folderPath or scriptName.'
+            }), 400
 
-        # Extract ZIP
-        extract_folder = os.path.join(UPLOAD_FOLDER, uploaded_file.filename.replace(".zip", ""))
-        os.makedirs(extract_folder, exist_ok=True)
-        shutil.unpack_archive(zip_path, extract_folder)
+        print(f"📢 Running {script_name} on folder: {folder_path}")
 
-        # Output folder for processed data
-        output_folder = os.path.join(PROCESSED_FOLDER, uploaded_file.filename.replace(".zip", ""))
-        os.makedirs(output_folder, exist_ok=True)
+        # Optional folder copying logic
+        if copy_folder_option and destination_folder:
+            try:
+                destination_folder_path = os.path.join(destination_folder, os.path.basename(folder_path))
+                shutil.copytree(folder_path, destination_folder_path)
+                new_path = destination_folder_path
+                print(f"✅ Folder copied to {destination_folder_path}.")
+            except Exception as e:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error copying folder: {e}'
+                }), 500
+        else:
+            new_path = folder_path
 
-        # Run selected script
+        # Mapping script names to corresponding functions
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -74,25 +68,29 @@ def run_analysis():
         }
 
         if script_name not in script_functions:
-            return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid script name.'
+            }), 400
 
-        process = Process(target=run_script, args=(script_functions[script_name], extract_folder, output_folder))
+        # Running script in a separate process
+        process = Process(target=run_script, args=(script_functions[script_name], new_path))
         process.start()
-        process.join()
 
-        # Compress processed folder
-        output_zip_path = os.path.join(PROCESSED_FOLDER, f"{uploaded_file.filename.replace('.zip', '_processed.zip')}")
-        compressed_zip = compress_folder(output_folder, output_zip_path)
-
-        if compressed_zip:
-            return send_file(compressed_zip, as_attachment=True)
-
-        return jsonify({'status': 'error', 'message': 'Failed to compress processed data'}), 500
+        return jsonify({
+            'status': 'success',
+            'message': f'{script_name} analysis started successfully!',
+            'acknowledgement': 'Processing...'
+        }), 200
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
+        return jsonify({
+            'status': 'error',
+            'message': f'Server error: {e}'
+        }), 500
 
 # --------------------- WebSocket Setup ---------------------
+
 connected_clients = set()
 
 async def websocket_handler(websocket, path):
@@ -116,6 +114,7 @@ async def start_websocket_server():
     await server.wait_closed()
 
 # --------------------- Running Flask & WebSocket in Parallel ---------------------
+
 def start_flask():
     """Starts the Flask app."""
     app.run(debug=False, host="0.0.0.0", port=5000, use_reloader=False)
@@ -125,11 +124,13 @@ def start_websocket():
     asyncio.run(start_websocket_server())
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
+    multiprocessing.set_start_method('spawn', force=True)
 
+    # Creating separate processes for Flask and WebSocket
     flask_process = Process(target=start_flask)
     websocket_process = Process(target=start_websocket)
 
+    # Start both servers
     flask_process.start()
     websocket_process.start()
 
@@ -141,4 +142,3 @@ if __name__ == '__main__':
         flask_process.terminate()
         websocket_process.terminate()
         flask_process.join()
-        websocket_process.join()
