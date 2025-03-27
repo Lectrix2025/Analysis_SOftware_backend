@@ -1,82 +1,47 @@
-import multiprocessing
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, request, jsonify, send_file
 import os
 import shutil
-import zipfile
+import time
 from multiprocessing import Process
-import asyncio
-import websockets
+from threading import Thread
+from flask_cors import CORS
 
-# Importing external scripts
+# Import your analysis scripts
 import Influx_LX70
 import Influx_LXS
 import Influx_NDuro
 import Influx_NDuro_NoGPS
 
-# --------------------- Flask Setup ---------------------
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend communication
+CORS(app)  # Enable CORS for frontend access
 
-UPLOAD_FOLDER = os.path.abspath("uploaded_folders")
+UPLOAD_FOLDER = "uploads"
+PROCESSED_FOLDER = "processed"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
-def run_script(script_func, path):
-    """Runs the given script function with the provided path."""
+analysis_status = {}  # Store the status of running processes
+
+def compress_folder(folder_path, output_zip):
+    """Compresses a folder into a zip file."""
+    shutil.make_archive(output_zip, 'zip', folder_path)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
     try:
-        script_func(path)
-        print(f"✅ {script_func.__name__} completed successfully.")
-    except Exception as e:
-        print(f"❌ Error in {script_func.__name__}: {e}")
-
-@app.route('/upload-folder', methods=['POST'])
-def upload_folder():
-    """Handles ZIP file uploads, extracts them, and processes."""
-    if 'file' not in request.files:
-        return jsonify({'status': 'error', 'message': 'No file uploaded.'}), 400
-
-    zip_file = request.files['file']
-    folder_name = os.path.splitext(zip_file.filename)[0]  # Remove .zip extension
-    folder_path = os.path.join(UPLOAD_FOLDER, folder_name)
-
-    # Save ZIP file temporarily
-    zip_path = os.path.join(UPLOAD_FOLDER, zip_file.filename)
-    zip_file.save(zip_path)
-
-    # Extract ZIP
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(folder_path)
-        os.remove(zip_path)  # Remove ZIP after extraction
-    except zipfile.BadZipFile:
-        return jsonify({'status': 'error', 'message': 'Invalid ZIP file.'}), 400
-
-    print(f"✅ Folder '{folder_name}' extracted successfully.")
-    return jsonify({'status': 'success', 'message': f'Folder "{folder_name}" extracted!', 'folderPath': folder_path}), 200
-
-@app.route('/run-analysis', methods=['POST'])
-def run_analysis():
-    """Handles API requests to execute specific analysis scripts."""
-    try:
-        # Ensure a file and script name are provided
         if 'file' not in request.files or 'scriptName' not in request.form:
             return jsonify({'status': 'error', 'message': 'Missing zip file or scriptName'}), 400
 
         uploaded_file = request.files['file']
         script_name = request.form['scriptName']
 
-        # Save the zip file
         zip_path = os.path.join(UPLOAD_FOLDER, uploaded_file.filename)
         uploaded_file.save(zip_path)
-        print(f"✅ Zip file saved at {zip_path}")
 
-        # Extract the zip file
         extract_folder = os.path.join(UPLOAD_FOLDER, uploaded_file.filename.replace(".zip", ""))
-        os.makedirs(extract_folder, exist_ok=True)
         shutil.unpack_archive(zip_path, extract_folder)
-        print(f"📂 Folder extracted to {extract_folder}")
+        os.remove(zip_path)  # Remove original zip after extraction
 
-        # Run the selected script
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -85,67 +50,43 @@ def run_analysis():
         }
 
         if script_name not in script_functions:
-            return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid script name'}), 400
 
-        # Run script in a separate process
-        process = Process(target=script_functions[script_name], args=(extract_folder,))
-        process.start()
+        analysis_status[extract_folder] = "Processing"
 
-        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!'}), 200
+        def run_script(script_func, folder_path, folder_name):
+            """Runs the script and updates status."""
+            try:
+                script_func(folder_path)
+                analysis_status[folder_name] = "Completed"
+
+                output_zip_path = os.path.join(PROCESSED_FOLDER, f"{folder_name}.zip")
+                compress_folder(folder_path, output_zip_path.replace(".zip", ""))
+                analysis_status[folder_name] = f"Ready for Download: {output_zip_path}"
+            except Exception as e:
+                analysis_status[folder_name] = f"Error: {str(e)}"
+            finally:
+                time.sleep(10)
+                shutil.rmtree(folder_path, ignore_errors=True)
+
+        thread = Thread(target=run_script, args=(script_functions[script_name], extract_folder, uploaded_file.filename.replace(".zip", "")))
+        thread.start()
+
+        return jsonify({'status': 'success', 'message': 'Processing started', 'folderName': uploaded_file.filename.replace(".zip", "")}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
 
+@app.route('/analysis-status/<folder_name>', methods=['GET'])
+def get_analysis_status(folder_name):
+    return jsonify({'status': analysis_status.get(folder_name, 'Processing')})
 
-
-# --------------------- WebSocket Setup ---------------------
-connected_clients = set()
-
-async def websocket_handler(websocket, path):
-    """Handles WebSocket connections and messages."""
-    print(f"🔗 New WebSocket connection from {websocket.remote_address}")
-    connected_clients.add(websocket)
-    try:
-        async for message in websocket:
-            print(f"📩 Received message: {message}")
-            response = f"Server received: {message}"
-            await websocket.send(response)
-    except websockets.exceptions.ConnectionClosed:
-        print(f"🔌 Client disconnected: {websocket.remote_address}")
-    finally:
-        connected_clients.remove(websocket)
-
-async def start_websocket_server():
-    """Starts WebSocket server."""
-    server = await websockets.serve(websocket_handler, "0.0.0.0", 5001)
-    print("✅ WebSocket server running at ws://0.0.0.0:5001")
-    await server.wait_closed()
-
-# --------------------- Running Flask & WebSocket in Parallel ---------------------
-def start_flask():
-    """Starts the Flask app."""
-    app.run(debug=False, host="0.0.0.0", port=5000, use_reloader=False)
-
-def start_websocket():
-    """Starts the WebSocket server."""
-    asyncio.run(start_websocket_server())
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    file_path = os.path.join(PROCESSED_FOLDER, filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    return jsonify({'status': 'error', 'message': 'File not found'}), 404
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
-
-    # Creating separate processes for Flask and WebSocket
-    flask_process = Process(target=start_flask)
-    websocket_process = Process(target=start_websocket)
-
-    # Start both servers
-    flask_process.start()
-    websocket_process.start()
-
-    try:
-        flask_process.join()
-        websocket_process.join()
-    except KeyboardInterrupt:
-        print("🛑 Stopping servers...")
-        flask_process.terminate()
-        websocket_process.terminate()
-        flask_process.join()
+    app.run(debug=True, port=5000)
