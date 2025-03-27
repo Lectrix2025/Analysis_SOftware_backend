@@ -56,34 +56,27 @@ def upload_folder():
 
 @app.route('/run-analysis', methods=['POST'])
 def run_analysis():
-    """Handles API requests to execute specific analysis scripts on a ZIP file."""
+    """Handles API requests to execute specific analysis scripts."""
     try:
-        if 'file' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No file part in request'}), 400
+        # Ensure a file and script name are provided
+        if 'file' not in request.files or 'scriptName' not in request.form:
+            return jsonify({'status': 'error', 'message': 'Missing zip file or scriptName'}), 400
 
-        zip_file = request.files['file']
-        script_name = request.form.get('scriptName')
+        uploaded_file = request.files['file']
+        script_name = request.form['scriptName']
 
-        if not zip_file or not script_name:
-            return jsonify({'status': 'error', 'message': 'Missing ZIP file or script name'}), 400
+        # Save the zip file
+        zip_path = os.path.join(UPLOAD_FOLDER, uploaded_file.filename)
+        uploaded_file.save(zip_path)
+        print(f"✅ Zip file saved at {zip_path}")
 
-        # Create a temporary directory to extract the ZIP file
-        temp_dir = tempfile.mkdtemp()
-        zip_path = os.path.join(temp_dir, zip_file.filename)
-        
-        # Save the ZIP file
-        zip_file.save(zip_path)
+        # Extract the zip file
+        extract_folder = os.path.join(UPLOAD_FOLDER, uploaded_file.filename.replace(".zip", ""))
+        os.makedirs(extract_folder, exist_ok=True)
+        shutil.unpack_archive(zip_path, extract_folder)
+        print(f"📂 Folder extracted to {extract_folder}")
 
-        # Extract ZIP contents
-        extracted_folder = os.path.join(temp_dir, "extracted")
-        os.makedirs(extracted_folder, exist_ok=True)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extracted_folder)
-
-        print(f"✅ ZIP file extracted to {extracted_folder}")
-
-        # Mapping script names to corresponding functions
+        # Run the selected script
         script_functions = {
             "Influx_LX70": Influx_LX70.Influx_LX70_input,
             "Influx_LXS": Influx_LXS.Influx_LXS_input,
@@ -92,16 +85,18 @@ def run_analysis():
         }
 
         if script_name not in script_functions:
-            return jsonify({'status': 'error', 'message': 'Invalid script name'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid script name.'}), 400
 
-        # Running script in a separate process
-        process = Process(target=run_script, args=(script_functions[script_name], extracted_folder))
+        # Run script in a separate process
+        process = Process(target=script_functions[script_name], args=(extract_folder,))
         process.start()
 
-        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!', 'acknowledgement': 'Processing...'}), 200
+        return jsonify({'status': 'success', 'message': f'{script_name} analysis started successfully!'}), 200
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Server error: {e}'}), 500
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
+
+
 
 # --------------------- WebSocket Setup ---------------------
 connected_clients = set()
