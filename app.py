@@ -15,7 +15,8 @@ import Influx_NDuro_NoGPS
 
 # --------------------- Flask Setup ---------------------
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend communication
+CORS(app, origins=["https://analysis-software-frontend.vercel.app/"])
+
 
 def run_script(script_func, path):
     """Runs the given script function with the provided path."""
