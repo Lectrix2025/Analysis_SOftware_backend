@@ -1,4 +1,5 @@
-def Influx_LX70_input(input_folder_path):    
+def Influx_LX70_input(input_folder_path, *args, **kwargs):
+    """Process the input data and generate the output for Influx LX70."""
     import sys
     from matplotlib.mlab import window_none
     import pandas as pd
